@@ -1,0 +1,34 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Output folders
+bin/
+build/
+
+# Go modules
+vendor/
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Excel temp files
+~$*.xlsx
+
+# Ignore your compiled program if named the same as package
+excel-loader
