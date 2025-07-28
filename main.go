@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
 	"github.com/xuri/excelize/v2"
@@ -14,9 +15,13 @@ import (
 )
 
 type Payment struct {
+	FileName        string
+	PaymentSystem   string
+	PaymentID       string
+	Amount          float64
 	AccountNumber   string
 	PaymentDateTime time.Time
-	Amount          float64
+	UploadedAt      time.Time
 }
 
 func main() {
@@ -49,81 +54,20 @@ func main() {
 func processFile(path string, conn *pgx.Conn) error {
 	f, err := excelize.OpenFile(path)
 	if err != nil {
-		return fmt.Errorf("не удалось открыть файл: %w", err)
+		return fmt.Errorf("Не удалось открыть файл: %w", err)
 	}
 	defer f.Close()
 
-	sheet := f.GetSheetName(0)
-	rows, err := f.GetRows(sheet)
-	if err != nil {
-		return fmt.Errorf("Не удалось прочитать строки: %w", err)
+	isAlif := strings.Contains(path, "Алиф")
+	isZudamal := strings.Contains(path, "Зудамал")
+
+	if isAlif {
+		return alifProccesFile(f, conn, path)
 	}
-
-	// Автоопределение заголовков
-	headers := make(map[string]int)
-	for i, row := range rows {
-		for j, cell := range row {
-			lc := strings.ToLower(strings.TrimSpace(cell))
-			switch {
-			case strings.Contains(lc, "услуга"):
-				headers["service"] = j
-			case strings.Contains(lc, "счет"):
-				headers["account"] = j
-			case strings.Contains(lc, "дата"):
-				headers["date"] = j
-			case strings.Contains(lc, "время"):
-				headers["time"] = j
-			case strings.Contains(lc, "сумма"):
-				headers["amount"] = j
-			}
-		}
-		if len(headers) >= 3 {
-			rows = rows[i+1:]
-			break
-		}
+	if isZudamal {
+		return errors.New("Not implemented yet")
 	}
-
-	for i, row := range rows {
-		if len(row) < 3 {
-			log.Printf("⚠️ Пропущена неполная строка %d: %v", i+2, row)
-			continue
-		}
-
-		// Фильтрация по услуге
-		if idx, ok := headers["service"]; ok {
-			if idx >= len(row) || !strings.Contains(strings.ToLower(row[idx]), "интернет") {
-				continue
-			}
-		}
-
-		account := ""
-		if idx, ok := headers["account"]; ok && idx < len(row) {
-			account = cleanAccount(row[idx])
-		}
-
-		var dt time.Time
-		switch {
-		case headers["date"] < len(row) && headers["time"] < len(row):
-			dt = parseSplitDateTime(row[headers["date"]], row[headers["time"]])
-		case headers["date"] < len(row):
-			dt = parseAnyDateTime(row[headers["date"]])
-		}
-
-		var amount float64
-		if idx, ok := headers["amount"]; ok && idx < len(row) {
-			amount = parseAmount(row[idx])
-		}
-
-		payment := Payment{
-			AccountNumber:   account,
-			PaymentDateTime: dt,
-			Amount:          amount,
-		}
-
-		if err := insertPayment(conn, payment); err != nil {
-			log.Printf("❌ Ошибка вставки в БД (строка %d): %v", i+2, err)
-		}
-	}
+	//
 
 	return nil
 }
@@ -134,25 +78,53 @@ func cleanAccount(raw string) string {
 	return re.FindString(raw)
 }
 
-func parseSplitDateTime(dateStr, timeStr string) time.Time {
-	dateVal, err := time.Parse("060102", dateStr)
-	if err != nil {
-		dateVal = time.Now()
-	}
-	timeStr = strings.TrimSpace(timeStr)
+func normalizeDateTime(value string) (time.Time, error) {
+	value = strings.TrimSpace(value)
 
-	// Обработка времени в виде числа, например: 349 -> 00:03:49
-	for len(timeStr) < 6 {
-		timeStr = "0" + timeStr
+	// Попробуем распарсить известные текстовые форматы даты и времени
+	formats := []string{
+		"02.01.06 15:04",
+		"02.01.2006 15:04:05",
+		"02.01.2006 15:04",
+		"02.01.2006",
+		"2006-01-02 15:04:05.000",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
 	}
-	t, err := time.Parse("150405", timeStr)
-	if err != nil {
-		return dateVal
+
+	for _, layout := range formats {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t, nil
+		}
 	}
-	return time.Date(dateVal.Year(), dateVal.Month(), dateVal.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.Local)
+
+	// Попытка как Excel-дата (в виде числа, например: "45500.5")
+	if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+		excelEpoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+		t := excelEpoch.Add(time.Duration(floatVal * 24 * float64(time.Hour)))
+		return t, nil
+	}
+
+	// Попытка как чистое время "349" / "161838"
+	if len(value) <= 6 {
+		// Преобразуем в HHMMSS (добавим нули спереди)
+		for len(value) < 6 {
+			value = "0" + value
+		}
+		if t, err := time.Parse("150405", value); err == nil {
+			now := time.Now()
+			return time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.Local), nil
+		}
+	}
+
+	// Не удалось распознать
+	return time.Time{}, fmt.Errorf("неизвестный формат времени: %q", value)
 }
 
 func parseAnyDateTime(value string) time.Time {
+	value = strings.TrimSpace(value)
+
+	// Попытка как текстовая дата
 	formats := []string{
 		"02.01.06 15:04",
 		"02.01.2006 15:04:05",
@@ -160,12 +132,21 @@ func parseAnyDateTime(value string) time.Time {
 		"02.01.2006 15:04",
 		"02.01.2006",
 	}
-	value = strings.TrimSpace(value)
 	for _, layout := range formats {
 		if t, err := time.Parse(layout, value); err == nil {
 			return t
 		}
 	}
+
+	// Попытка распарсить как Excel-дата-число
+	if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+		// Excel-даты начинаются с 1899-12-30
+		excelEpoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+		d := excelEpoch.Add(time.Duration(floatVal * 24 * float64(time.Hour)))
+		return d
+	}
+
+	log.Printf("⚠️ Неизвестный формат даты: %q — подставляется текущая дата", value)
 	return time.Now()
 }
 
@@ -178,130 +159,11 @@ func parseAmount(s string) float64 {
 
 func insertPayment(conn *pgx.Conn, p Payment) error {
 	_, err := conn.Exec(context.Background(),
-		`INSERT INTO payments (account_number, payment_datetime, amount)
-		 VALUES ($1, $2, $3)`,
-		p.AccountNumber, p.PaymentDateTime, p.Amount)
+		`INSERT INTO payments (file_name, payment_system, payment_id, amount, account_number, payment_datetime, uploaded_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		p.FileName, p.PaymentSystem, p.PaymentID, p.Amount, p.AccountNumber, p.PaymentDateTime, p.UploadedAt)
+	if err != nil {
+		log.Println(err)
+	}
 	return err
 }
-
-/*package main
-
-import (
-	"context"
-	"fmt"
-	"github.com/jackc/pgx/v5"
-	"github.com/xuri/excelize/v2"
-	"log"
-	"path/filepath"
-	"strconv"
-	"time"
-)
-
-type Payment struct {
-	AccountNumber   string
-	PaymentDateTime time.Time
-	Amount          float64
-}
-
-func main() {
-
-	// Подключение к PostgreSQL
-	conn, err := pgx.Connect(context.Background(), "postgres://postgres:Akramchik938747405@localhost:5432/payments?sslmode=disable")
-	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
-	}
-	defer conn.Close(context.Background())
-
-	// Получаем все файлы .xlsx из папки data/
-	files, err := filepath.Glob("data/*.xlsx")
-	if err != nil {
-		log.Fatalf("Failed to find Excel files: %v", err)
-	}
-	if len(files) == 0 {
-		log.Println("No Excel files found in ./data")
-		return
-	}
-
-	for _, file := range files {
-		fmt.Printf("📄 Обработка файла: %s\n", file)
-		if err := processFile(file, conn); err != nil {
-			log.Printf(" Ошибка в файле %s: %v", file, err)
-		}
-	}
-
-	fmt.Println(" Загрузка завершена.")
-}
-
-func processFile(path string, conn *pgx.Conn) error {
-	// Открываем Excel-файл
-	f, err := excelize.OpenFile(path)
-	if err != nil {
-		return fmt.Errorf("не удалось открыть файл: %w", err)
-	}
-	defer f.Close()
-
-	// Читаем первую таблицу
-	sheet := f.GetSheetName(0)
-	rows, err := f.GetRows(sheet)
-	if err != nil {
-		return fmt.Errorf("не удалось прочитать строки: %w", err)
-	}
-
-	// Пропускаем заголовок
-	for i, row := range rows[1:] {
-		if len(row) < 3 {
-			log.Printf(" Пропущена неполная строка %d: %v", i+2, row)
-			continue
-		}
-
-		account := row[0]
-
-		// Парсим дату и время
-		paymentTime, err := parseDateTime(row[1])
-		if err != nil {
-			log.Printf(" Ошибка даты в строке %d: %v", i+2, err)
-			continue
-		}
-
-		// Парсим сумму
-		amount, err := strconv.ParseFloat(row[2], 64)
-		if err != nil {
-			log.Printf(" Ошибка суммы в строке %d: %v", i+2, err)
-			continue
-		}
-
-		payment := Payment{AccountNumber: account, PaymentDateTime: paymentTime, Amount: amount}
-
-		// Загружаем в БД
-		if err := insertPayment(conn, payment); err != nil {
-			log.Printf(" Ошибка вставки в БД (строка %d): %v", i+2, err)
-		}
-	}
-
-	return nil
-}
-
-func parseDateTime(value string) (time.Time, error) {
-	// Попытка разных форматов даты
-	formats := []string{
-		time.RFC3339,
-		"02.01.2006 15:04",
-		"2006-01-02 15:04:05",
-		"02.01.2006",
-	}
-	for _, format := range formats {
-		if t, err := time.Parse(format, value); err == nil {
-			return t, nil
-		}
-	}
-	return time.Time{}, fmt.Errorf("неизвестный формат даты: %s", value)
-}
-
-func insertPayment(conn *pgx.Conn, p Payment) error {
-	_, err := conn.Exec(context.Background(),
-		`INSERT INTO payments (account_number, payment_datetime, amount)
-		 VALUES ($1, $2, $3)`,
-		p.AccountNumber, p.PaymentDateTime, p.Amount)
-	return err
-}
-*/
