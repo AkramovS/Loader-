@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
 	"github.com/xuri/excelize/v2"
@@ -56,23 +55,44 @@ func processFile(path string, conn *pgx.Conn) error {
 	if err != nil {
 		return fmt.Errorf("Не удалось открыть файл: %w", err)
 	}
-	defer f.Close()
+	defer func(f *excelize.File) {
+		err := f.Close()
+		if err != nil {
+
+		}
+	}(f)
 
 	isAlif := strings.Contains(path, "Алиф")
 	isZudamal := strings.Contains(path, "Зудамал")
+	isIBT := strings.Contains(strings.ToLower(path), "международн")
+	isHumo := strings.Contains(path, "Хумо")
+	isShukr := strings.Contains(path, "Шукр Молия")
+	isDushanbe := strings.Contains(path, "Душанбе Сити")
 
 	if isAlif {
 		return alifProccesFile(f, conn, path)
 	}
 	if isZudamal {
-		return errors.New("Not implemented yet")
+		return ZudamalProccesFile(f, conn, path)
+	}
+	if isIBT {
+		return IbtProccesFile(f, conn, path)
+	}
+	if isHumo {
+		return humoProccesFile(f, conn, path)
+	}
+	if isShukr {
+		return shukrProccesFile(f, conn, path)
+	}
+	if isDushanbe {
+		return dushanbeProccesFile(f, conn, path)
 	}
 	//
 
 	return nil
 }
 
-func cleanAccount(raw string) string {
+func CleanAccount(raw string) string {
 	// Убираем всё, что после точки, плюса, пробела и т.д.
 	re := regexp.MustCompile(`^\d+`)
 	return re.FindString(raw)
@@ -119,6 +139,33 @@ func normalizeDateTime(value string) (time.Time, error) {
 
 	// Не удалось распознать
 	return time.Time{}, fmt.Errorf("неизвестный формат времени: %q", value)
+}
+
+func extractAndParseDateTime(s string) (time.Time, error) {
+	// Удаляем лишние пробелы
+	s = strings.TrimSpace(s)
+
+	// Ищем подстроку вида 4-2-2 (дата)
+	reDate := regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
+	datePart := reDate.FindString(s)
+
+	// Ищем подстроку вида 2:2:2 (время)
+	reTime := regexp.MustCompile(`\d{2}:\d{2}:\d{2}`)
+	timePart := reTime.FindString(s)
+
+	if datePart == "" || timePart == "" {
+		return time.Time{}, fmt.Errorf("не удалось найти корректную дату или время в строке: %q", s)
+	}
+
+	// Собираем строку и парсим
+	combined := datePart + " " + timePart
+	layout := "2006-01-02 15:04:05"
+
+	t, err := time.Parse(layout, combined)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("не удалось распарсить как дату-время: %v", err)
+	}
+	return t, nil
 }
 
 func parseAnyDateTime(value string) time.Time {

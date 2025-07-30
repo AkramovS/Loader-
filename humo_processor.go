@@ -7,35 +7,37 @@ import (
 	"github.com/xuri/excelize/v2"
 	"log"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
-func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
+func humoProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
 		return fmt.Errorf("Не удалось прочитать строки: %w", err)
 	}
 
-	if len(rows) == 0 {
+	if len(rows) < 6 {
 		return errors.New("Empty file")
 	}
 
 	// Автоопределение заголовков
 	headers := make(map[string]int)
-	for j, cell := range rows[0] {
+	for j, cell := range rows[5] {
 		lc := strings.TrimSpace(cell)
 		switch lc {
 		case "ID":
 			headers["ID"] = j
-		case "Сумма провайдера":
+		case "Amount":
 			headers["amount"] = j
-		case "Счёт":
+		case "Account":
 			headers["account"] = j
-		case "Дата оплаты":
+		case "CreatedAt":
 			headers["transactionTime"] = j
-		case "Название провайдера":
+		case "ServiceDesc":
 			headers["providerName"] = j
 		}
 	}
@@ -49,7 +51,7 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 			log.Println("Skip 0 row because it is naming row")
 			continue
 		}
-		if len(row) < 3 {
+		if len(row) < 5 {
 			log.Printf("⚠️ Пропущена неполная строка %d: %v", i+2, row)
 			continue
 		}
@@ -113,7 +115,7 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 				log.Printf("Not have column ID, invalid row id is %d", i)
 				continue
 			}
-			PaymentDataTime, err = normalizeDateTime(row[idx])
+			PaymentDataTime, err = extractAndParseDateTime(row[idx])
 			if err != nil {
 				log.Println(err.Error())
 				continue
@@ -122,7 +124,7 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 
 		payment := Payment{
 			FileName:      filepath.Base(path),
-			PaymentSystem: "alif",
+			PaymentSystem: "Humo",
 			PaymentID:     paymentID,
 
 			Amount:          amount,
@@ -138,4 +140,41 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	}
 
 	return nil
+}
+
+func cleanInvalidDateTime(raw string) (time.Time, error) {
+	// Ищем YYYY-MM-DD и HH:MM:SS
+	re := regexp.MustCompile(`(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})`)
+	matches := re.FindStringSubmatch(raw)
+
+	if len(matches) != 7 {
+		return time.Time{}, fmt.Errorf("❌ не удалось извлечь дату и время: %s", raw)
+	}
+
+	year, _ := strconv.Atoi(matches[1])
+	month, _ := strconv.Atoi(matches[2])
+	day, _ := strconv.Atoi(matches[3])
+	hour, _ := strconv.Atoi(matches[4])
+	minute, _ := strconv.Atoi(matches[5])
+	second, _ := strconv.Atoi(matches[6])
+
+	// Ограничим значения до допустимых
+	if month > 12 {
+		month = 12
+	}
+	if day > 31 {
+		day = 31
+	}
+	if hour > 23 {
+		hour = 23
+	}
+	if minute > 59 {
+		minute = 59
+	}
+	if second > 59 {
+		second = 59
+	}
+
+	// Собираем дату
+	return time.Date(year, time.Month(month), day, hour, minute, second, 0, time.UTC), nil
 }

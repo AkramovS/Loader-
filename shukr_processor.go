@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
+func shukrProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
@@ -27,15 +27,15 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	for j, cell := range rows[0] {
 		lc := strings.TrimSpace(cell)
 		switch lc {
-		case "ID":
+		case "ID платежа":
 			headers["ID"] = j
-		case "Сумма провайдера":
+		case "Сумма зачисленная":
 			headers["amount"] = j
-		case "Счёт":
+		case "Номер":
 			headers["account"] = j
-		case "Дата оплаты":
+		case "Время сервера":
 			headers["transactionTime"] = j
-		case "Название провайдера":
+		case "Сервис":
 			headers["providerName"] = j
 		}
 	}
@@ -69,7 +69,7 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		}
 
 		if idx, ok := headers["providerName"]; ok {
-			if row[idx] != "Babilon-T Internet" {
+			if row[idx] != "Babilon-T (Internet)" {
 				log.Println("Skip row, wait Babilon-T Internet id ", paymentID)
 				continue
 			}
@@ -122,7 +122,7 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 
 		payment := Payment{
 			FileName:      filepath.Base(path),
-			PaymentSystem: "alif",
+			PaymentSystem: "Shukr Molia",
 			PaymentID:     paymentID,
 
 			Amount:          amount,

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
+func dushanbeProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
@@ -27,21 +27,23 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	for j, cell := range rows[0] {
 		lc := strings.TrimSpace(cell)
 		switch lc {
-		case "ID":
+		case "транзакции":
 			headers["ID"] = j
-		case "Сумма провайдера":
+		case "суммма":
 			headers["amount"] = j
-		case "Счёт":
+		case "Л.С":
 			headers["account"] = j
-		case "Дата оплаты":
+		case "Дата":
 			headers["transactionTime"] = j
-		case "Название провайдера":
+		case "время":
+			headers["transactionTimeHours"] = j
+		case "поставщик":
 			headers["providerName"] = j
 		}
 	}
 
-	if len(headers) < 5 {
-		return errors.New(fmt.Sprintf("Не хватает столбцов ожидается 5, но получаем %d", len(headers)))
+	if len(headers) < 6 {
+		return errors.New(fmt.Sprintf("Не хватает столбцов ожидается 6, но получаем %d", len(headers)))
 	}
 
 	for i, row := range rows {
@@ -69,7 +71,9 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		}
 
 		if idx, ok := headers["providerName"]; ok {
-			if row[idx] != "Babilon-T Internet" {
+			isBabilonOK := strings.Contains(row[idx], "Babilon-T")
+			okInternetOk := strings.Contains(row[idx], "Интернет")
+			if !isBabilonOK || !okInternetOk {
 				log.Println("Skip row, wait Babilon-T Internet id ", paymentID)
 				continue
 			}
@@ -113,7 +117,19 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 				log.Printf("Not have column ID, invalid row id is %d", i)
 				continue
 			}
-			PaymentDataTime, err = normalizeDateTime(row[idx])
+
+			if idx1, ok := headers["transactionTimeHours"]; ok {
+				if idx1 > len(row) {
+					log.Printf("Not have column ID, invalid row id is %d", i)
+					continue
+				}
+				if len(row[0]) == 0 {
+					log.Printf("Not have column ID, invalid row id is %d", i)
+					continue
+				}
+			}
+
+			PaymentDataTime, err = parseYYMMDDAndTimeString(row[idx], row[idx+1])
 			if err != nil {
 				log.Println(err.Error())
 				continue
@@ -122,7 +138,7 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 
 		payment := Payment{
 			FileName:      filepath.Base(path),
-			PaymentSystem: "alif",
+			PaymentSystem: "Dushanbe city",
 			PaymentID:     paymentID,
 
 			Amount:          amount,
@@ -138,4 +154,30 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	}
 
 	return nil
+}
+
+// parseDDMMYYAndTimeString — парсит дату в формате "DDMMYY" и время как строку ("349", "161838", и т.д.)
+func parseYYMMDDAndTimeString(dateStr, timeStr string) (time.Time, error) {
+	dateStr = strings.TrimSpace(dateStr)
+	timeStr = strings.TrimSpace(timeStr)
+
+	// Парсим дату: "250501" → 01.05.2025
+	dateVal, err := time.Parse("060102", dateStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("не удалось распарсить дату: %v", err)
+	}
+
+	// Нормализуем время: "349" → "000349", "161838" остаётся
+	for len(timeStr) < 6 {
+		timeStr = "0" + timeStr
+	}
+
+	t, err := time.Parse("150405", timeStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("не удалось распарсить время: %v", err)
+	}
+
+	// Комбинируем дату и время
+	result := time.Date(dateVal.Year(), dateVal.Month(), dateVal.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.Local)
+	return result, nil
 }

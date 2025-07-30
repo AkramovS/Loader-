@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
+func IbtProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
@@ -24,18 +24,18 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 
 	// Автоопределение заголовков
 	headers := make(map[string]int)
-	for j, cell := range rows[0] {
+	for j, cell := range rows[1] {
 		lc := strings.TrimSpace(cell)
 		switch lc {
-		case "ID":
+		case "ИД Платежа":
 			headers["ID"] = j
-		case "Сумма провайдера":
+		case "На счет":
 			headers["amount"] = j
-		case "Счёт":
+		case "Номер":
 			headers["account"] = j
-		case "Дата оплаты":
+		case "Дата":
 			headers["transactionTime"] = j
-		case "Название провайдера":
+		case "Услуга":
 			headers["providerName"] = j
 		}
 	}
@@ -45,7 +45,7 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	}
 
 	for i, row := range rows {
-		if i == 0 {
+		if i == 1 {
 			log.Println("Skip 0 row because it is naming row")
 			continue
 		}
@@ -60,7 +60,7 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 				log.Printf("Not have column ID, invalid row id is %d", i)
 				continue
 			}
-			if len(row[0]) == 0 {
+			if len(row[1]) == 1 {
 				log.Printf("Not have column ID, invalid row id is %d", i)
 				continue
 			}
@@ -69,7 +69,7 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		}
 
 		if idx, ok := headers["providerName"]; ok {
-			if row[idx] != "Babilon-T Internet" {
+			if row[idx] != "Babilon-T" {
 				log.Println("Skip row, wait Babilon-T Internet id ", paymentID)
 				continue
 			}
@@ -122,7 +122,7 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 
 		payment := Payment{
 			FileName:      filepath.Base(path),
-			PaymentSystem: "alif",
+			PaymentSystem: "IBT",
 			PaymentID:     paymentID,
 
 			Amount:          amount,
