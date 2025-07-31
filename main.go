@@ -41,7 +41,7 @@ func main() {
 
 	for _, file := range files {
 		fmt.Printf("Обработка файла: %s\n", file)
-		if err := processFile(file, conn); err != nil {
+		if err := handleExcelFile(file, conn); err != nil {
 			log.Printf("Ошибка в файле %s: %v", file, err)
 		}
 	}
@@ -50,52 +50,35 @@ func main() {
 }
 
 // Открываем все файлы в папке Data
-func processFile(path string, conn *pgx.Conn) error {
-	f, err := excelize.OpenFile(path)
+func handleExcelFile(path string, conn *pgx.Conn) error {
+	file, err := excelize.OpenFile(path)
 	if err != nil {
-		return fmt.Errorf("Не удалось открыть файл: %w", err)
+		return fmt.Errorf("не удалось открыть файл: %w", err)
 	}
-	defer func(f *excelize.File) {
-		err := f.Close()
-		if err != nil {
+	defer file.Close()
 
-		}
-	}(f)
-
-	isAlif := strings.Contains(path, "Алиф")
-	isZudamal := strings.Contains(path, "Зудамал")
-	isIBT := strings.Contains(strings.ToLower(path), "международн")
-	isHumo := strings.Contains(path, "Хумо")
-	isShukr := strings.Contains(path, "Шукр Молия")
-	isDushanbe := strings.Contains(path, "Душанбе Сити")
-
-	if isAlif {
-		return alifProcessFile(f, conn, path)
+	switch {
+	case strings.Contains(path, "Алиф"):
+		return alifProcessFile(file, conn, path)
+	case strings.Contains(path, "Зудамал"):
+		return ZudamalProcessFile(file, conn, path)
+	case strings.Contains(strings.ToLower(path), "международн"):
+		return IbtProcessFile(file, conn, path)
+	case strings.Contains(path, "Хумо"):
+		return humoProcessFile(file, conn, path)
+	case strings.Contains(path, "Шукр Молия"):
+		return shukrProcessFile(file, conn, path)
+	case strings.Contains(path, "Душанбе Сити"):
+		return dushanbeProcessFile(file, conn, path)
+	default:
+		log.Printf("Неизвестный формат файла: %s", path)
+		return nil
 	}
-	if isZudamal {
-		return ZudamalProcessFile(f, conn, path)
-	}
-	if isIBT {
-		return IbtProcessFile(f, conn, path)
-	}
-	if isHumo {
-		return humoProcessFile(f, conn, path)
-	}
-	if isShukr {
-		return shukrProcessFile(f, conn, path)
-	}
-	if isDushanbe {
-		return dushanbeProcessFile(f, conn, path)
-	}
-	//
-
-	return nil
 }
 
 // Попробуем распарсить известные текстовые форматы даты и времени
 func normalizeDateTime(value string) (time.Time, error) {
 	value = strings.TrimSpace(value)
-
 	formats := []string{
 		"02.01.06 15:04",
 		"02.01.2006 15:04:05",
@@ -115,8 +98,7 @@ func normalizeDateTime(value string) (time.Time, error) {
 	// Попытка как Excel-дата (в виде числа, например: "45500.5")
 	if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
 		excelEpoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
-		t := excelEpoch.Add(time.Duration(floatVal * 24 * float64(time.Hour)))
-		return t, nil
+		return excelEpoch.Add(time.Duration(floatVal * 24 * float64(time.Hour))), nil
 	}
 
 	// Попытка как чистое время "349" / "161838"
@@ -130,7 +112,7 @@ func normalizeDateTime(value string) (time.Time, error) {
 			return time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.Local), nil
 		}
 	}
-	// Не удалось распознать
+
 	return time.Time{}, fmt.Errorf("неизвестный формат времени: %q", value)
 }
 
@@ -147,9 +129,16 @@ func insertPayment(conn *pgx.Conn, p Payment) error {
 	_, err := conn.Exec(context.Background(),
 		`INSERT INTO payments (file_name, payment_system, payment_id, amount, account_number, payment_datetime, uploaded_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		p.FileName, p.PaymentSystem, p.PaymentID, p.Amount, p.AccountNumber, p.PaymentDateTime, p.UploadedAt)
+		p.FileName,
+		p.PaymentSystem,
+		p.PaymentID,
+		p.Amount,
+		p.AccountNumber,
+		p.PaymentDateTime,
+		p.UploadedAt,
+	)
 	if err != nil {
-		log.Println(err)
+		log.Println("Ошибка вставки платежа: %v", err)
 	}
 	return err
 }
