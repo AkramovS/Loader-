@@ -20,14 +20,13 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	}
 
 	if len(rows) == 0 {
-		return errors.New("Empty file")
+		return errors.New("Пустой файл")
 	}
 
 	// Автоопределение заголовков
 	headers := make(map[string]int)
 	for j, cell := range rows[0] {
-		lc := strings.TrimSpace(cell)
-		switch lc {
+		switch strings.TrimSpace(cell) {
 		case "транзакции":
 			headers["ID"] = j
 		case "суммма":
@@ -44,12 +43,12 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	}
 
 	if len(headers) < 6 {
-		return errors.New(fmt.Sprintf("Не хватает столбцов ожидается 6, но получаем %d", len(headers)))
+		return errors.New(fmt.Sprintf("Не хватает столбцов: найдено %d", len(headers)))
 	}
 
 	for i, row := range rows {
 		if i == 0 {
-			log.Println("Skip 0 row because it is naming row")
+			log.Println("Пропущена первая строка (заголовки)")
 			continue
 		}
 		if len(row) < 3 {
@@ -60,11 +59,11 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		paymentID := ""
 		if idx, ok := headers["ID"]; ok {
 			if idx > len(row) {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %dd", i)
 				continue
 			}
 			if len(row[0]) == 0 {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 
@@ -72,10 +71,8 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		}
 
 		if idx, ok := headers["providerName"]; ok {
-			isBabilonOK := strings.Contains(row[idx], "Babilon-T")
-			okInternetOk := strings.Contains(row[idx], "Интернет")
-			if !isBabilonOK || !okInternetOk {
-				log.Println("Skip row, wait Babilon-T Internet id ", paymentID)
+			if !strings.Contains(row[idx], "Babilon-T") || !strings.Contains(row[idx], "Интернет") {
+				log.Println("Пропущена строка,ожидается Babilon-T Internet id ", paymentID)
 				continue
 			}
 		} else {
@@ -85,11 +82,11 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		amount := 0.0
 		if idx, ok := headers["amount"]; ok {
 			if idx > len(row) {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			if len(row[0]) == 0 {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			amount = parseAmount(row[idx])
@@ -98,11 +95,11 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		acountnumber := ""
 		if idx, ok := headers["account"]; ok {
 			if idx > len(row) {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			if len(row[0]) == 0 {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			acountnumber = row[idx]
@@ -111,21 +108,21 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		var PaymentDataTime time.Time
 		if idx, ok := headers["transactionTime"]; ok {
 			if idx > len(row) {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			if len(row[0]) == 0 {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 
 			if idx1, ok := headers["transactionTimeHours"]; ok {
 				if idx1 > len(row) {
-					log.Printf("Not have column ID, invalid row id is %d", i)
+					log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 					continue
 				}
 				if len(row[0]) == 0 {
-					log.Printf("Not have column ID, invalid row id is %d", i)
+					log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 					continue
 				}
 			}
@@ -138,10 +135,9 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		}
 
 		payment := Payment{
-			FileName:      filepath.Base(path),
-			PaymentSystem: "Dushanbe city",
-			PaymentID:     paymentID,
-
+			FileName:        filepath.Base(path),
+			PaymentSystem:   "Dushanbe city",
+			PaymentID:       paymentID,
 			Amount:          amount,
 			AccountNumber:   acountnumber,
 			PaymentDateTime: PaymentDataTime,
