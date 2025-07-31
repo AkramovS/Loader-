@@ -7,11 +7,13 @@ import (
 	"github.com/xuri/excelize/v2"
 	"log"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
 
-func humoProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
+// Считывание строк файла Хумо
+func humoProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
@@ -138,4 +140,31 @@ func humoProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	}
 
 	return nil
+}
+
+func extractAndParseDateTime(s string) (time.Time, error) {
+	// Удаляем лишние пробелы
+	s = strings.TrimSpace(s)
+
+	// Ищем подстроку вида 4-2-2 (дата)
+	reDate := regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
+	datePart := reDate.FindString(s)
+
+	// Ищем подстроку вида 2:2:2 (время)
+	reTime := regexp.MustCompile(`\d{2}:\d{2}:\d{2}`)
+	timePart := reTime.FindString(s)
+
+	if datePart == "" || timePart == "" {
+		return time.Time{}, fmt.Errorf("не удалось найти корректную дату или время в строке: %q", s)
+	}
+
+	// Собираем строку и парсим
+	combined := datePart + " " + timePart
+	layout := "2006-01-02 15:04:05"
+
+	t, err := time.Parse(layout, combined)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("не удалось распарсить как дату-время: %v", err)
+	}
+	return t, nil
 }

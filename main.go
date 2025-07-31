@@ -7,7 +7,6 @@ import (
 	"github.com/xuri/excelize/v2"
 	"log"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -24,7 +23,7 @@ type Payment struct {
 }
 
 func main() {
-	// Подключение к PostgreSQL
+	// Подключение к PostgresSQL
 	conn, err := pgx.Connect(context.Background(), "postgres://postgres:Akramchik938747405@localhost:5432/payments?sslmode=disable")
 	if err != nil {
 		log.Fatalf("Ошибка подключения к базе данных: %v", err)
@@ -41,15 +40,16 @@ func main() {
 	}
 
 	for _, file := range files {
-		fmt.Printf("📄 Обработка файла: %s\n", file)
+		fmt.Printf("Обработка файла: %s\n", file)
 		if err := processFile(file, conn); err != nil {
-			log.Printf("❌ Ошибка в файле %s: %v", file, err)
+			log.Printf("Ошибка в файле %s: %v", file, err)
 		}
 	}
 
-	fmt.Println("✅ Загрузка завершена.")
+	fmt.Println("Загрузка завершена.")
 }
 
+// Открываем все файлы в папке Data
 func processFile(path string, conn *pgx.Conn) error {
 	f, err := excelize.OpenFile(path)
 	if err != nil {
@@ -70,38 +70,32 @@ func processFile(path string, conn *pgx.Conn) error {
 	isDushanbe := strings.Contains(path, "Душанбе Сити")
 
 	if isAlif {
-		return alifProccesFile(f, conn, path)
+		return alifProcessFile(f, conn, path)
 	}
 	if isZudamal {
-		return ZudamalProccesFile(f, conn, path)
+		return ZudamalProcessFile(f, conn, path)
 	}
 	if isIBT {
-		return IbtProccesFile(f, conn, path)
+		return IbtProcessFile(f, conn, path)
 	}
 	if isHumo {
-		return humoProccesFile(f, conn, path)
+		return humoProcessFile(f, conn, path)
 	}
 	if isShukr {
-		return shukrProccesFile(f, conn, path)
+		return shukrProcessFile(f, conn, path)
 	}
 	if isDushanbe {
-		return dushanbeProccesFile(f, conn, path)
+		return dushanbeProcessFile(f, conn, path)
 	}
 	//
 
 	return nil
 }
 
-func CleanAccount(raw string) string {
-	// Убираем всё, что после точки, плюса, пробела и т.д.
-	re := regexp.MustCompile(`^\d+`)
-	return re.FindString(raw)
-}
-
+// Попробуем распарсить известные текстовые форматы даты и времени
 func normalizeDateTime(value string) (time.Time, error) {
 	value = strings.TrimSpace(value)
 
-	// Попробуем распарсить известные текстовые форматы даты и времени
 	formats := []string{
 		"02.01.06 15:04",
 		"02.01.2006 15:04:05",
@@ -136,67 +130,11 @@ func normalizeDateTime(value string) (time.Time, error) {
 			return time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.Local), nil
 		}
 	}
-
 	// Не удалось распознать
 	return time.Time{}, fmt.Errorf("неизвестный формат времени: %q", value)
 }
 
-func extractAndParseDateTime(s string) (time.Time, error) {
-	// Удаляем лишние пробелы
-	s = strings.TrimSpace(s)
-
-	// Ищем подстроку вида 4-2-2 (дата)
-	reDate := regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
-	datePart := reDate.FindString(s)
-
-	// Ищем подстроку вида 2:2:2 (время)
-	reTime := regexp.MustCompile(`\d{2}:\d{2}:\d{2}`)
-	timePart := reTime.FindString(s)
-
-	if datePart == "" || timePart == "" {
-		return time.Time{}, fmt.Errorf("не удалось найти корректную дату или время в строке: %q", s)
-	}
-
-	// Собираем строку и парсим
-	combined := datePart + " " + timePart
-	layout := "2006-01-02 15:04:05"
-
-	t, err := time.Parse(layout, combined)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("не удалось распарсить как дату-время: %v", err)
-	}
-	return t, nil
-}
-
-func parseAnyDateTime(value string) time.Time {
-	value = strings.TrimSpace(value)
-
-	// Попытка как текстовая дата
-	formats := []string{
-		"02.01.06 15:04",
-		"02.01.2006 15:04:05",
-		"2006-01-02 15:04:05.000",
-		"02.01.2006 15:04",
-		"02.01.2006",
-	}
-	for _, layout := range formats {
-		if t, err := time.Parse(layout, value); err == nil {
-			return t
-		}
-	}
-
-	// Попытка распарсить как Excel-дата-число
-	if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
-		// Excel-даты начинаются с 1899-12-30
-		excelEpoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
-		d := excelEpoch.Add(time.Duration(floatVal * 24 * float64(time.Hour)))
-		return d
-	}
-
-	log.Printf("⚠️ Неизвестный формат даты: %q — подставляется текущая дата", value)
-	return time.Now()
-}
-
+// Парсим строку с денежной суммой в Float64
 func parseAmount(s string) float64 {
 	s = strings.ReplaceAll(s, " ", "")
 	s = strings.ReplaceAll(s, ",", ".")
@@ -204,6 +142,7 @@ func parseAmount(s string) float64 {
 	return amount
 }
 
+// Добавляем в таблицу Payments
 func insertPayment(conn *pgx.Conn, p Payment) error {
 	_, err := conn.Exec(context.Background(),
 		`INSERT INTO payments (file_name, payment_system, payment_id, amount, account_number, payment_datetime, uploaded_at)

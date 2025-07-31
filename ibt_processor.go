@@ -11,7 +11,8 @@ import (
 	"time"
 )
 
-func IbtProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
+// Считывание строк файла Межднародный Банк
+func IbtProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {

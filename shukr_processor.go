@@ -11,7 +11,8 @@ import (
 	"time"
 )
 
-func shukrProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
+// Считывание строк файла Шукр Молия
+func shukrProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
@@ -50,7 +51,7 @@ func shukrProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 			continue
 		}
 		if len(row) < 3 {
-			log.Printf("⚠️ Пропущена неполная строка %d: %v", i+2, row)
+			log.Printf("Пропущена неполная строка %d: %v", i+2, row)
 			continue
 		}
 
@@ -133,7 +134,7 @@ func shukrProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		}
 
 		if err := insertPayment(conn, payment); err != nil {
-			log.Printf("❌ Ошибка вставки в БД (строка %d): %v", i+2, err)
+			log.Printf("Ошибка вставки в БД (строка %d): %v", i+2, err)
 		}
 	}
 

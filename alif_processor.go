@@ -11,15 +11,16 @@ import (
 	"time"
 )
 
-func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
+// Считывание строк файла Алиф
+func alifProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return fmt.Errorf("Не удалось прочитать строки: %w", err)
+		return fmt.Errorf("не удалось прочитать строки: %w", err)
 	}
 
 	if len(rows) == 0 {
-		return errors.New("Empty file")
+		return errors.New("empty file")
 	}
 
 	// Автоопределение заголовков
@@ -50,7 +51,7 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 			continue
 		}
 		if len(row) < 3 {
-			log.Printf("⚠️ Пропущена неполная строка %d: %v", i+2, row)
+			log.Printf("Пропущена неполная строка %d: %v", i+2, row)
 			continue
 		}
 
@@ -122,7 +123,7 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 
 		payment := Payment{
 			FileName:      filepath.Base(path),
-			PaymentSystem: "alif",
+			PaymentSystem: "Alif",
 			PaymentID:     paymentID,
 
 			Amount:          amount,
@@ -133,7 +134,7 @@ func alifProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		}
 
 		if err := insertPayment(conn, payment); err != nil {
-			log.Printf("❌ Ошибка вставки в БД (строка %d): %v", i+2, err)
+			log.Printf("Ошибка вставки в БД (строка %d): %v", i+2, err)
 		}
 	}
 

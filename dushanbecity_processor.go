@@ -11,7 +11,8 @@ import (
 	"time"
 )
 
-func dushanbeProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
+// Считывание строк файла Душанбе Сити
+func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
@@ -52,7 +53,7 @@ func dushanbeProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 			continue
 		}
 		if len(row) < 3 {
-			log.Printf("⚠️ Пропущена неполная строка %d: %v", i+2, row)
+			log.Printf("Пропущена неполная строка %d: %v", i+2, row)
 			continue
 		}
 
@@ -149,14 +150,14 @@ func dushanbeProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		}
 
 		if err := insertPayment(conn, payment); err != nil {
-			log.Printf("❌ Ошибка вставки в БД (строка %d): %v", i+2, err)
+			log.Printf("Ошибка вставки в БД (строка %d): %v", i+2, err)
 		}
 	}
 
 	return nil
 }
 
-// parseDDMMYYAndTimeString — парсит дату в формате "DDMMYY" и время как строку ("349", "161838", и т.д.)
+// Функция parseDDMMYYAndTimeString — парсит дату в формате "DDMMYY" и время как строку ("349", "161838", и т.д.)
 func parseYYMMDDAndTimeString(dateStr, timeStr string) (time.Time, error) {
 	dateStr = strings.TrimSpace(dateStr)
 	timeStr = strings.TrimSpace(timeStr)
