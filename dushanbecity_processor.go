@@ -59,7 +59,7 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		paymentID := ""
 		if idx, ok := headers["ID"]; ok {
 			if idx > len(row) {
-				log.Printf("Не удалось найти столбец  — ошибка в строке %dd", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			if len(row[0]) == 0 {

@@ -20,14 +20,13 @@ func IbtProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	}
 
 	if len(rows) == 0 {
-		return errors.New("Empty file")
+		return errors.New("Пустой файл ")
 	}
 
 	// Автоопределение заголовков
 	headers := make(map[string]int)
 	for j, cell := range rows[1] {
-		lc := strings.TrimSpace(cell)
-		switch lc {
+		switch strings.TrimSpace(cell) {
 		case "ИД Платежа":
 			headers["ID"] = j
 		case "На счет":
@@ -47,22 +46,22 @@ func IbtProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 
 	for i, row := range rows {
 		if i == 1 {
-			log.Println("Skip 0 row because it is naming row")
+			log.Println("Пропущена первая строка (заголовки)")
 			continue
 		}
 		if len(row) < 3 {
-			log.Printf("⚠️ Пропущена неполная строка %d: %v", i+2, row)
+			log.Printf("Пропущена неполная строка %d: %v", i+2, row)
 			continue
 		}
 
 		paymentID := ""
 		if idx, ok := headers["ID"]; ok {
 			if idx > len(row) {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			if len(row[1]) == 1 {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 
@@ -71,7 +70,7 @@ func IbtProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 
 		if idx, ok := headers["providerName"]; ok {
 			if row[idx] != "Babilon-T" {
-				log.Println("Skip row, wait Babilon-T Internet id ", paymentID)
+				log.Println("Пропущена строка,ожидается Babilon-T Internet id ", paymentID)
 				continue
 			}
 		} else {
@@ -81,11 +80,11 @@ func IbtProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		amount := 0.0
 		if idx, ok := headers["amount"]; ok {
 			if idx > len(row) {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			if len(row[0]) == 0 {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			amount = parseAmount(row[idx])
@@ -94,11 +93,11 @@ func IbtProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		acountnumber := ""
 		if idx, ok := headers["account"]; ok {
 			if idx > len(row) {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			if len(row[0]) == 0 {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			acountnumber = row[idx]
@@ -107,11 +106,11 @@ func IbtProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		var PaymentDataTime time.Time
 		if idx, ok := headers["transactionTime"]; ok {
 			if idx > len(row) {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			if len(row[0]) == 0 {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			PaymentDataTime, err = normalizeDateTime(row[idx])
@@ -122,10 +121,9 @@ func IbtProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		}
 
 		payment := Payment{
-			FileName:      filepath.Base(path),
-			PaymentSystem: "IBT",
-			PaymentID:     paymentID,
-
+			FileName:        filepath.Base(path),
+			PaymentSystem:   "IBT",
+			PaymentID:       paymentID,
 			Amount:          amount,
 			AccountNumber:   acountnumber,
 			PaymentDateTime: PaymentDataTime,
@@ -134,7 +132,7 @@ func IbtProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		}
 
 		if err := insertPayment(conn, payment); err != nil {
-			log.Printf("❌ Ошибка вставки в БД (строка %d): %v", i+2, err)
+			log.Printf(" Ошибка вставки в БД (строка %d): %v", i+2, err)
 		}
 	}
 
