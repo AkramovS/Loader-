@@ -7,8 +7,6 @@ import (
 	"github.com/xuri/excelize/v2"
 	"log"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -140,41 +138,4 @@ func humoProccesFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	}
 
 	return nil
-}
-
-func cleanInvalidDateTime(raw string) (time.Time, error) {
-	// Ищем YYYY-MM-DD и HH:MM:SS
-	re := regexp.MustCompile(`(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})`)
-	matches := re.FindStringSubmatch(raw)
-
-	if len(matches) != 7 {
-		return time.Time{}, fmt.Errorf("❌ не удалось извлечь дату и время: %s", raw)
-	}
-
-	year, _ := strconv.Atoi(matches[1])
-	month, _ := strconv.Atoi(matches[2])
-	day, _ := strconv.Atoi(matches[3])
-	hour, _ := strconv.Atoi(matches[4])
-	minute, _ := strconv.Atoi(matches[5])
-	second, _ := strconv.Atoi(matches[6])
-
-	// Ограничим значения до допустимых
-	if month > 12 {
-		month = 12
-	}
-	if day > 31 {
-		day = 31
-	}
-	if hour > 23 {
-		hour = 23
-	}
-	if minute > 59 {
-		minute = 59
-	}
-	if second > 59 {
-		second = 59
-	}
-
-	// Собираем дату
-	return time.Date(year, time.Month(month), day, hour, minute, second, 0, time.UTC), nil
 }
