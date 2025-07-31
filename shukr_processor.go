@@ -16,18 +16,17 @@ func shukrProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return fmt.Errorf("Не удалось прочитать строки: %w", err)
+		return fmt.Errorf("Не удалось прочитать строки: %w ", err)
 	}
 
 	if len(rows) == 0 {
-		return errors.New("Empty file")
+		return errors.New("Пустой файл ")
 	}
 
 	// Автоопределение заголовков
 	headers := make(map[string]int)
 	for j, cell := range rows[0] {
-		lc := strings.TrimSpace(cell)
-		switch lc {
+		switch strings.TrimSpace(cell) {
 		case "ID платежа":
 			headers["ID"] = j
 		case "Сумма зачисленная":
@@ -47,7 +46,7 @@ func shukrProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 
 	for i, row := range rows {
 		if i == 0 {
-			log.Println("Skip 0 row because it is naming row")
+			log.Println("Пропущена первая строка (заголовки)")
 			continue
 		}
 		if len(row) < 3 {
@@ -58,11 +57,11 @@ func shukrProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		paymentID := ""
 		if idx, ok := headers["ID"]; ok {
 			if idx > len(row) {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			if len(row[0]) == 0 {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 
@@ -71,7 +70,7 @@ func shukrProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 
 		if idx, ok := headers["providerName"]; ok {
 			if row[idx] != "Babilon-T (Internet)" {
-				log.Println("Skip row, wait Babilon-T Internet id ", paymentID)
+				log.Println("Пропущена строка,ожидается Babilon-T Internet id ", paymentID)
 				continue
 			}
 		} else {
@@ -81,11 +80,11 @@ func shukrProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		amount := 0.0
 		if idx, ok := headers["amount"]; ok {
 			if idx > len(row) {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			if len(row[0]) == 0 {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			amount = parseAmount(row[idx])
@@ -94,11 +93,11 @@ func shukrProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		acountnumber := ""
 		if idx, ok := headers["account"]; ok {
 			if idx > len(row) {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			if len(row[0]) == 0 {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			acountnumber = row[idx]
@@ -107,11 +106,11 @@ func shukrProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		var PaymentDataTime time.Time
 		if idx, ok := headers["transactionTime"]; ok {
 			if idx > len(row) {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			if len(row[0]) == 0 {
-				log.Printf("Not have column ID, invalid row id is %d", i)
+				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
 			PaymentDataTime, err = normalizeDateTime(row[idx])
@@ -122,10 +121,9 @@ func shukrProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		}
 
 		payment := Payment{
-			FileName:      filepath.Base(path),
-			PaymentSystem: "Shukr Molia",
-			PaymentID:     paymentID,
-
+			FileName:        filepath.Base(path),
+			PaymentSystem:   "Shukr Molia",
+			PaymentID:       paymentID,
 			Amount:          amount,
 			AccountNumber:   acountnumber,
 			PaymentDateTime: PaymentDataTime,

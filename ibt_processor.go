@@ -16,7 +16,7 @@ func IbtProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return fmt.Errorf("Не удалось прочитать строки: %w", err)
+		return fmt.Errorf("Не удалось прочитать строки: %w ", err)
 	}
 
 	if len(rows) == 0 {
