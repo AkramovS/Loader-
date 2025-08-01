@@ -1,6 +1,9 @@
-package main
+package usecases
 
 import (
+	"Loader/db"
+	"Loader/models"
+	"Loader/utils"
 	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
@@ -11,37 +14,39 @@ import (
 	"time"
 )
 
-// Считывание строк файла Алиф
-func alifProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
+const ShukrMolia = "Shukr Molia"
+
+// Считывание строк файла Шукр Молия
+func shukrProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return fmt.Errorf("не удалось прочитать строки: %w", err)
+		return fmt.Errorf("Не удалось прочитать строки: %w ", err)
 	}
 
 	if len(rows) == 0 {
-		return errors.New("файл пуст")
+		return errors.New("Пустой файл ")
 	}
 
 	// Автоопределение заголовков
 	headers := make(map[string]int)
 	for j, cell := range rows[0] {
 		switch strings.TrimSpace(cell) {
-		case "ID":
+		case "ID платежа":
 			headers["ID"] = j
-		case "Сумма провайдера":
+		case "Сумма зачисленная":
 			headers["amount"] = j
-		case "Счёт":
+		case "Номер":
 			headers["account"] = j
-		case "Дата оплаты":
+		case "Время сервера":
 			headers["transactionTime"] = j
-		case "Название провайдера":
+		case "Сервис":
 			headers["providerName"] = j
 		}
 	}
 
 	if len(headers) < 5 {
-		return errors.New(fmt.Sprintf("Не хватает столбцов: найдено  %d", len(headers)))
+		return errors.New(fmt.Sprintf("Не хватает столбцов ожидается 5, но получаем %d", len(headers)))
 	}
 
 	for i, row := range rows {
@@ -69,7 +74,7 @@ func alifProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		}
 
 		if idx, ok := headers["providerName"]; ok {
-			if row[idx] != "Babilon-T Internet" {
+			if row[idx] != "Babilon-T (Internet)" {
 				log.Println("Пропущена строка,ожидается Babilon-T Internet id ", paymentID)
 				continue
 			}
@@ -87,7 +92,7 @@ func alifProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
-			amount = parseAmount(row[idx])
+			amount = utils.ParseAmount(row[idx])
 		}
 
 		acountnumber := ""
@@ -100,7 +105,7 @@ func alifProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
-			acountnumber = row[idx]
+			acountnumber = CleanAccount(row[idx])
 		}
 
 		var PaymentDataTime time.Time
@@ -113,16 +118,16 @@ func alifProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
-			PaymentDataTime, err = normalizeDateTime(row[idx])
+			PaymentDataTime, err = utils.NormalizeDateTime(row[idx])
 			if err != nil {
 				log.Println(err.Error())
 				continue
 			}
 		}
 
-		payment := Payment{
+		payment := models.Payment{
 			FileName:        filepath.Base(path),
-			PaymentSystem:   "Alif",
+			PaymentSystem:   ShukrMolia,
 			PaymentID:       paymentID,
 			Amount:          amount,
 			AccountNumber:   acountnumber,
@@ -130,7 +135,7 @@ func alifProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 			UploadedAt:      time.Now(),
 		}
 
-		if err := insertPayment(conn, payment); err != nil {
+		if err := db.InsertPayment(conn, payment); err != nil {
 			log.Printf("Ошибка вставки в БД (строка %d): %v", i+2, err)
 		}
 	}

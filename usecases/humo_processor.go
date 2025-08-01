@@ -1,6 +1,9 @@
-package main
+package usecases
 
 import (
+	"Loader/db"
+	"Loader/models"
+	"Loader/utils"
 	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
@@ -11,6 +14,8 @@ import (
 	"strings"
 	"time"
 )
+
+const Humo = "Humo"
 
 // Считывание строк файла Хумо
 func humoProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
@@ -88,7 +93,7 @@ func humoProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
-			amount = parseAmount(row[idx])
+			amount = utils.ParseAmount(row[idx])
 		}
 
 		acountnumber := ""
@@ -101,7 +106,7 @@ func humoProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
-			acountnumber = row[idx]
+			acountnumber = CleanAccount(row[idx])
 		}
 
 		var PaymentDataTime time.Time
@@ -121,19 +126,17 @@ func humoProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 			}
 		}
 
-		payment := Payment{
-			FileName:      filepath.Base(path),
-			PaymentSystem: "Humo",
-			PaymentID:     paymentID,
-
+		payment := models.Payment{
+			FileName:        filepath.Base(path),
+			PaymentSystem:   Humo,
+			PaymentID:       paymentID,
 			Amount:          amount,
 			AccountNumber:   acountnumber,
 			PaymentDateTime: PaymentDataTime,
-
-			UploadedAt: time.Now(),
+			UploadedAt:      time.Now(),
 		}
 
-		if err := insertPayment(conn, payment); err != nil {
+		if err := db.InsertPayment(conn, payment); err != nil {
 			log.Printf("Ошибка вставки в БД (строка %d): %v", i+2, err)
 		}
 	}

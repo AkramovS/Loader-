@@ -1,6 +1,9 @@
-package main
+package usecases
 
 import (
+	"Loader/db"
+	"Loader/models"
+	"Loader/utils"
 	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
@@ -11,43 +14,43 @@ import (
 	"time"
 )
 
-// Считывание строк файла Душанбе Сити
-func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
+const IBT = "IBT"
+
+// Считывание строк файла Межднародный Банк
+func ibtProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return fmt.Errorf("Не удалось прочитать строки: %w", err)
+		return fmt.Errorf("Не удалось прочитать строки: %w ", err)
 	}
 
 	if len(rows) == 0 {
-		return errors.New("Пустой файл")
+		return errors.New("Пустой файл ")
 	}
 
 	// Автоопределение заголовков
 	headers := make(map[string]int)
-	for j, cell := range rows[0] {
+	for j, cell := range rows[1] {
 		switch strings.TrimSpace(cell) {
-		case "транзакции":
+		case "ИД Платежа":
 			headers["ID"] = j
-		case "суммма":
+		case "На счет":
 			headers["amount"] = j
-		case "Л.С":
+		case "Номер":
 			headers["account"] = j
 		case "Дата":
 			headers["transactionTime"] = j
-		case "время":
-			headers["transactionTimeHours"] = j
-		case "поставщик":
+		case "Услуга":
 			headers["providerName"] = j
 		}
 	}
 
-	if len(headers) < 6 {
-		return errors.New(fmt.Sprintf("Не хватает столбцов: найдено %d", len(headers)))
+	if len(headers) < 5 {
+		return errors.New(fmt.Sprintf("Не хватает столбцов ожидается 5, но получаем %d", len(headers)))
 	}
 
 	for i, row := range rows {
-		if i == 0 {
+		if i == 1 {
 			log.Println("Пропущена первая строка (заголовки)")
 			continue
 		}
@@ -62,7 +65,7 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
-			if len(row[0]) == 0 {
+			if len(row[1]) == 1 {
 				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
@@ -71,7 +74,7 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 		}
 
 		if idx, ok := headers["providerName"]; ok {
-			if !strings.Contains(row[idx], "Babilon-T") || !strings.Contains(row[idx], "Интернет") {
+			if row[idx] != "Babilon-T" {
 				log.Println("Пропущена строка,ожидается Babilon-T Internet id ", paymentID)
 				continue
 			}
@@ -89,7 +92,7 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
-			amount = parseAmount(row[idx])
+			amount = utils.ParseAmount(row[idx])
 		}
 
 		acountnumber := ""
@@ -102,7 +105,7 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
-			acountnumber = row[idx]
+			acountnumber = CleanAccount(row[idx])
 		}
 
 		var PaymentDataTime time.Time
@@ -115,28 +118,16 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 				log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
 				continue
 			}
-
-			if idx1, ok := headers["transactionTimeHours"]; ok {
-				if idx1 > len(row) {
-					log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
-					continue
-				}
-				if len(row[0]) == 0 {
-					log.Printf("Не удалось найти столбец  — ошибка в строке %d", i)
-					continue
-				}
-			}
-
-			PaymentDataTime, err = parseYYMMDDAndTimeString(row[idx], row[idx+1])
+			PaymentDataTime, err = utils.NormalizeDateTime(row[idx])
 			if err != nil {
 				log.Println(err.Error())
 				continue
 			}
 		}
 
-		payment := Payment{
+		payment := models.Payment{
 			FileName:        filepath.Base(path),
-			PaymentSystem:   "Dushanbe city",
+			PaymentSystem:   IBT,
 			PaymentID:       paymentID,
 			Amount:          amount,
 			AccountNumber:   acountnumber,
@@ -145,36 +136,10 @@ func dushanbeProcessFile(f *excelize.File, conn *pgx.Conn, path string) error {
 			UploadedAt: time.Now(),
 		}
 
-		if err := insertPayment(conn, payment); err != nil {
-			log.Printf("Ошибка вставки в БД (строка %d): %v", i+2, err)
+		if err := db.InsertPayment(conn, payment); err != nil {
+			log.Printf(" Ошибка вставки в БД (строка %d): %v", i+2, err)
 		}
 	}
 
 	return nil
-}
-
-// Функция parseDDMMYYAndTimeString — парсит дату в формате "DDMMYY" и время как строку ("349", "161838", и т.д.)
-func parseYYMMDDAndTimeString(dateStr, timeStr string) (time.Time, error) {
-	dateStr = strings.TrimSpace(dateStr)
-	timeStr = strings.TrimSpace(timeStr)
-
-	// Парсим дату: "250501" → 01.05.2025
-	dateVal, err := time.Parse("060102", dateStr)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("не удалось распарсить дату: %v", err)
-	}
-
-	// Нормализуем время: "349" → "000349", "161838" остаётся
-	for len(timeStr) < 6 {
-		timeStr = "0" + timeStr
-	}
-
-	t, err := time.Parse("150405", timeStr)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("не удалось распарсить время: %v", err)
-	}
-
-	// Комбинируем дату и время
-	result := time.Date(dateVal.Year(), dateVal.Month(), dateVal.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.Local)
-	return result, nil
 }
